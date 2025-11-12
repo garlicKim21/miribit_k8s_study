@@ -240,7 +240,7 @@ ansible-playbook -i ../inventory.ini cluster.yml -e @../custom.yml -b -v
 
 이 교육 자료는 Miribit 내부 교육용으로 제작되었습니다.
 
-## 👥 기여자
+## 👥 강의자
 
 - 강의 자료 작성 및 관리: 김현태 책임
 
