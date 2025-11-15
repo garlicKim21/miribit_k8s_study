@@ -139,10 +139,20 @@ kubectl get pods -n kube-system | grep etcd
 ETCD_VERSION="3.5.15"
 
 # ctrl-1에 etcdctl 설치 (아키텍처 자동 감지)
-ARCH=\$(uname -m); if [ \"\$ARCH\" = \"aarch64\" ]; then ETCD_ARCH=\"arm64\"; else ETCD_ARCH=\"amd64\"; fi; cd /tmp && curl -L https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-\${ETCD_ARCH}.tar.gz -o etcd-v${ETCD_VERSION}-linux-\${ETCD_ARCH}.tar.gz && tar xzf etcd-v${ETCD_VERSION}-linux-\${ETCD_ARCH}.tar.gz && cp etcd-v${ETCD_VERSION}-linux-\${ETCD_ARCH}/etcdctl /usr/local/bin/ && chmod +x /usr/local/bin/etcdctl && rm -rf etcd-v${ETCD_VERSION}-linux-\${ETCD_ARCH}*
-
+ARCH=$(uname -m); \
+if [ "$ARCH" = "aarch64" ]; then ETCD_ARCH="arm64"; else ETCD_ARCH="amd64"; fi; \
+cd /tmp && \
+curl -L https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}.tar.gz \
+  -o etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}.tar.gz && \
+tar xzf etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}.tar.gz && \
+cp etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}/etcdctl /usr/local/bin/ && \
+chmod +x /usr/local/bin/etcdctl && \
+rm -rf etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}*
 #27 etcd 클러스터 멤버를 확인합니다.
-ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key member list -w table
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \
+--cacert=/etc/kubernetes/pki/etcd/ca.crt \
+--cert=/etc/kubernetes/pki/etcd/server.crt \
+--key=/etc/kubernetes/pki/etcd/server.key member list -w table
 
 #28 etcd 클러스터의 리더를 확인합니다.
 ETCDCTL_API=3 etcdctl --endpoints=https://192.168.104.81:2379,https://192.168.104.82:2379,https://192.168.104.83:2379 \
