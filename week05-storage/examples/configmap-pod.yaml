@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+data:
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  app.properties: |
+    database.host=db.example.com
+    database.port=5432
+    database.name=myapp
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-demo
+spec:
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ['sh', '-c', 'echo "APP_ENV=$APP_ENV" && echo "APP_PORT=$APP_PORT" && echo "---" && cat /etc/config/app.properties && sleep 3600']
+    env:
+    - name: APP_ENV
+      valueFrom:
+        configMapKeyRef:
+          name: demo-config
+          key: APP_ENV
+    - name: APP_PORT
+      valueFrom:
+        configMapKeyRef:
+          name: demo-config
+          key: APP_PORT
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/config
+      readOnly: true
+  volumes:
+  - name: config-volume
+    configMap:
+      name: demo-config
+      items:
+      - key: app.properties
+        path: app.properties

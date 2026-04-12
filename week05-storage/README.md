@@ -170,40 +170,130 @@ spec:
 - 보안 위험 (호스트 파일 시스템 접근)
 - 주로 DaemonSet에서 노드 로그/메트릭 수집에 사용
 
-### 2.3 ConfigMap과 Secret 볼륨
+### 2.3 ConfigMap과 Secret
 
-설정 데이터를 볼륨으로 마운트:
+ConfigMap과 Secret은 설정 데이터를 컨테이너에 주입하는 리소스입니다.
+Pod에서 사용하는 방법은 크게 두 가지입니다:
+
+1. **환경 변수**로 주입
+2. **볼륨 마운트**로 파일 형태로 주입
+
+```
+┌──────────────────── Pod ────────────────────┐
+│                                             │
+│  ┌───────────────────────────────────────┐  │
+│  │  Container                            │  │
+│  │                                       │  │
+│  │  환경 변수: APP_ENV=production         │  ← env / envFrom
+│  │  환경 변수: APP_PORT=8080              │  │
+│  │                                       │  │
+│  │  /etc/config/app.properties (파일)     │  ← volumeMounts
+│  │                                       │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+#### ConfigMap — 비민감 설정 데이터
 
 ```yaml
-# ConfigMap 정의
+# examples/configmap-pod.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: app-config
+  name: demo-config
 data:
+  APP_ENV: "production"
+  APP_PORT: "8080"
   app.properties: |
-    database.host=localhost
+    database.host=db.example.com
     database.port=5432
-
+    database.name=myapp
 ---
-# Pod에서 ConfigMap 사용
 apiVersion: v1
 kind: Pod
 metadata:
-  name: config-pod
+  name: configmap-demo
 spec:
   containers:
   - name: app
-    image: myapp
+    image: busybox:1.36
+    command: ['sh', '-c', 'echo "APP_ENV=$APP_ENV" && echo "APP_PORT=$APP_PORT" && echo "---" && cat /etc/config/app.properties && sleep 3600']
+    # 방법 1: 환경 변수로 주입
+    env:
+    - name: APP_ENV
+      valueFrom:
+        configMapKeyRef:
+          name: demo-config
+          key: APP_ENV
+    - name: APP_PORT
+      valueFrom:
+        configMapKeyRef:
+          name: demo-config
+          key: APP_PORT
+    # 방법 2: 볼륨 마운트로 파일 주입
     volumeMounts:
     - name: config-volume
       mountPath: /etc/config
-
+      readOnly: true
   volumes:
   - name: config-volume
     configMap:
-      name: app-config
+      name: demo-config
+      items:
+      - key: app.properties
+        path: app.properties
 ```
+
+#### Secret — 민감 데이터 (비밀번호, 토큰 등)
+
+ConfigMap과 사용법이 동일하지만, 데이터가 Base64로 인코딩됩니다.
+`stringData`를 사용하면 평문으로 작성할 수 있습니다 (apply 시 자동 인코딩).
+
+```yaml
+# examples/secret-pod.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-secret
+type: Opaque
+stringData:
+  username: admin
+  password: "S3cur3P@ssw0rd!"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secret-demo
+spec:
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ['sh', '-c', 'echo "DB_USER=$DB_USER" && echo "---" && ls /etc/secrets/ && cat /etc/secrets/username && sleep 3600']
+    # 방법 1: 환경 변수로 주입
+    env:
+    - name: DB_USER
+      valueFrom:
+        secretKeyRef:
+          name: demo-secret
+          key: username
+    - name: DB_PASS
+      valueFrom:
+        secretKeyRef:
+          name: demo-secret
+          key: password
+    # 방법 2: 볼륨 마운트 (각 키가 개별 파일로 생성)
+    volumeMounts:
+    - name: secret-volume
+      mountPath: /etc/secrets
+      readOnly: true
+  volumes:
+  - name: secret-volume
+    secret:
+      secretName: demo-secret
+```
+
+> **참고:** Base64는 인코딩이지 암호화가 아닙니다. 프로덕션에서는 RBAC 제한과 etcd 암호화를 함께 적용해야 합니다.
 
 ---
 
@@ -640,7 +730,57 @@ kubectl delete -f examples/local-path-pvc.yaml
 > **핵심 포인트:** 정적 프로비저닝(6.2)에서는 PV를 먼저 만들어야 했지만,
 > 동적 프로비저닝에서는 PVC만 만들면 PV가 **자동으로** 생성됩니다.
 
-### 6.4 MySQL with PVC 실습
+### 6.4 ConfigMap 실습
+
+```bash
+# ConfigMap + Pod 생성
+kubectl apply -f examples/configmap-pod.yaml
+
+# Pod 상태 확인
+kubectl get pod configmap-demo
+
+# 환경 변수 확인
+kubectl exec configmap-demo -- sh -c 'echo APP_ENV=$APP_ENV && echo APP_PORT=$APP_PORT'
+# 출력: APP_ENV=production
+#       APP_PORT=8080
+
+# 마운트된 설정 파일 확인
+kubectl exec configmap-demo -- cat /etc/config/app.properties
+# 출력: database.host=db.example.com ...
+
+# 정리
+kubectl delete -f examples/configmap-pod.yaml
+```
+
+### 6.5 Secret 실습
+
+```bash
+# Secret + Pod 생성
+kubectl apply -f examples/secret-pod.yaml
+
+# Pod 상태 확인
+kubectl get pod secret-demo
+
+# 환경 변수로 주입된 값 확인
+kubectl exec secret-demo -- sh -c 'echo DB_USER=$DB_USER'
+# 출력: DB_USER=admin
+
+# 볼륨 마운트된 파일 확인 (각 키가 개별 파일)
+kubectl exec secret-demo -- ls /etc/secrets/
+# 출력: password  username
+
+kubectl exec secret-demo -- cat /etc/secrets/username
+# 출력: admin
+
+# Secret 값 직접 조회 (Base64 디코딩)
+kubectl get secret demo-secret -o jsonpath='{.data.username}' | base64 -d
+# 출력: admin
+
+# 정리
+kubectl delete -f examples/secret-pod.yaml
+```
+
+### 6.6 MySQL with PVC 실습
 
 ```bash
 # MySQL 배포
